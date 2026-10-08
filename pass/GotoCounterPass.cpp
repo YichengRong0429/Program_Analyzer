@@ -50,11 +50,7 @@
 
 using namespace llvm;
 
-static cl::opt<bool>
-    StaticReport("goto-counter-static",
-                 cl::desc("Print static (compile-time) branch counts per "
-                          "function to stderr"),
-                 cl::init(false));
+static cl::opt<bool> StaticReport("goto-counter-static", cl::desc("Print static (compile-time) branch counts per " "function to stderr"),cl::init(false));
 
 namespace {
 
@@ -75,7 +71,7 @@ struct BranchSite {
 
 // Returns true and sets Kind if T is a branch we count.
 bool classify(const Instruction *T, BranchKind &Kind) {
-  if (const auto *Br = dyn_cast<BranchInst>(T)) {
+  if (const BranchInst *Br = dyn_cast<BranchInst>(T)) {
     Kind = Br->isUnconditional() ? KindGoto : KindCondBr;
     return true;
   }
@@ -93,15 +89,15 @@ bool classify(const Instruction *T, BranchKind &Kind) {
 // Creates a private constant C string and returns it as a global.
 GlobalVariable *makeString(Module &M, StringRef Str, const Twine &Name) {
   Constant *Init = ConstantDataArray::getString(M.getContext(), Str);
-  auto *GV = new GlobalVariable(M, Init->getType(), /*isConstant=*/true,
-                                GlobalValue::PrivateLinkage, Init, Name);
+  GlobalVariable *GV = new GlobalVariable(M, Init->getType(), /*isConstant=*/true,
+                                          GlobalValue::PrivateLinkage, Init, Name);
   GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
   return GV;
 }
 
 GlobalVariable *makeConstArray(Module &M, Type *ElemTy,
                                ArrayRef<Constant *> Elems, const Twine &Name) {
-  auto *Ty = ArrayType::get(ElemTy, Elems.size());
+  ArrayType *Ty = ArrayType::get(ElemTy, Elems.size());
   return new GlobalVariable(M, Ty, /*isConstant=*/true,
                             GlobalValue::PrivateLinkage,
                             ConstantArray::get(Ty, Elems), Name);
@@ -150,8 +146,8 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass> {
     const uint64_t N = Sites.size();
 
     // ---- Step 2: per-site counters and description tables. ----
-    auto *CounterTy = ArrayType::get(I64, N);
-    auto *Counters = new GlobalVariable(
+    ArrayType *CounterTy = ArrayType::get(I64, N);
+    GlobalVariable *Counters = new GlobalVariable(
         M, CounterTy, /*isConstant=*/false, GlobalValue::PrivateLinkage,
         Constant::getNullValue(CounterTy), "__gc_counters");
 
