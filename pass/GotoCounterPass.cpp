@@ -50,159 +50,255 @@
 
 using namespace llvm;
 
-static cl::opt<bool> StaticReport("goto-counter-static", cl::desc("Print static (compile-time) branch counts per " "function to stderr"),cl::init(false));
+static cl::opt<bool> StaticReport(
+    "goto-counter-static",
+    cl::desc("Print static (compile-time) branch counts per function to stderr"),
+    cl::init(false));
 
-namespace {
+namespace
+{
 
-enum BranchKind : uint32_t {
-  KindGoto = 0,
-  KindCondBr = 1,
-  KindSwitch = 2,
-  KindIndirectBr = 3,
-  NumKinds = 4
+enum BranchKind : uint32_t
+{
+    KindGoto = 0,
+    KindCondBr = 1,
+    KindSwitch = 2,
+    KindIndirectBr = 3,
+    NumKinds = 4
 };
 
-struct BranchSite {
-  Instruction *Term;
-  BranchKind Kind;
-  uint32_t FuncIdx;
-  uint32_t Line;
+struct BranchSite
+{
+    Instruction *Term;
+    BranchKind Kind;
+    uint32_t FuncIdx;
+    uint32_t Line;
 };
 
 // Returns true and sets Kind if T is a branch we count.
-bool classify(const Instruction *T, BranchKind &Kind) {
-  if (const BranchInst *Br = dyn_cast<BranchInst>(T)) {
-    Kind = Br->isUnconditional() ? KindGoto : KindCondBr;
-    return true;
-  }
-  if (isa<SwitchInst>(T)) {
-    Kind = KindSwitch;
-    return true;
-  }
-  if (isa<IndirectBrInst>(T)) {
-    Kind = KindIndirectBr;
-    return true;
-  }
-  return false;
+bool classify(const Instruction *T, BranchKind &Kind)
+{
+    if (const BranchInst *Br = dyn_cast<BranchInst>(T))
+    {
+        if (Br->isUnconditional())
+        {
+            Kind = KindGoto;
+        }
+        else
+        {
+            Kind = KindCondBr;
+        }
+        return true;
+    }
+    if (isa<SwitchInst>(T))
+    {
+        Kind = KindSwitch;
+        return true;
+    }
+    if (isa<IndirectBrInst>(T))
+    {
+        Kind = KindIndirectBr;
+        return true;
+    }
+    return false;
 }
 
 // Creates a private constant C string and returns it as a global.
-GlobalVariable *makeString(Module &M, StringRef Str, const Twine &Name) {
-  Constant *Init = ConstantDataArray::getString(M.getContext(), Str);
-  GlobalVariable *GV = new GlobalVariable(M, Init->getType(), /*isConstant=*/true,
-                                          GlobalValue::PrivateLinkage, Init, Name);
-  GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-  return GV;
+GlobalVariable *makeString(Module &M, StringRef Str, const Twine &Name)
+{
+    Constant *Init = ConstantDataArray::getString(M.getContext(), Str);
+    GlobalVariable *GV = new GlobalVariable(
+        M,
+        Init->getType(),
+        /*isConstant=*/true,
+        GlobalValue::PrivateLinkage,
+        Init,
+        Name);
+    GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    return GV;
 }
 
-GlobalVariable *makeConstArray(Module &M, Type *ElemTy,
-                               ArrayRef<Constant *> Elems, const Twine &Name) {
-  ArrayType *Ty = ArrayType::get(ElemTy, Elems.size());
-  return new GlobalVariable(M, Ty, /*isConstant=*/true,
-                            GlobalValue::PrivateLinkage,
-                            ConstantArray::get(Ty, Elems), Name);
+GlobalVariable *makeConstArray(Module &M, Type *ElemTy, ArrayRef<Constant *> Elems, const Twine &Name)
+{
+    ArrayType *Ty = ArrayType::get(ElemTy, Elems.size());
+    return new GlobalVariable(
+        M,
+        Ty,
+        /*isConstant=*/true,
+        GlobalValue::PrivateLinkage,
+        ConstantArray::get(Ty, Elems),
+        Name);
 }
 
-struct GotoCounterPass : PassInfoMixin<GotoCounterPass> {
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
-    std::vector<BranchSite> Sites;
-    std::vector<std::string> FuncNames;
+struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
+{
+    PreservedAnalyses run(Module &M, ModuleAnalysisManager &)
+    {
+        std::vector<BranchSite> Sites;
+        std::vector<std::string> FuncNames;
 
-    // ---- Step 1: find every branch site (pure static analysis). ----
-    for (Function &F : M) {
-      if (F.isDeclaration())
-        continue;
-      uint32_t FuncIdx = FuncNames.size();
-      FuncNames.push_back(demangle(F.getName().str()));
+        // ---- Step 1: find every branch site (pure static analysis). ----
+        for (Function &F : M)
+        {
+            if (F.isDeclaration())
+            {
+                continue;
+            }
+            uint32_t FuncIdx = FuncNames.size();
+            FuncNames.push_back(demangle(F.getName().str()));
 
-      std::array<unsigned, NumKinds> Static{};
-      for (BasicBlock &BB : F) {
-        Instruction *T = BB.getTerminator();
-        BranchKind Kind;
-        if (!T || !classify(T, Kind))
-          continue;
-        uint32_t Line = 0;
-        if (const DebugLoc &DL = T->getDebugLoc())
-          Line = DL.getLine();
-        Sites.push_back({T, Kind, FuncIdx, Line});
-        ++Static[Kind];
-      }
+            std::array<unsigned, NumKinds> Static{};
+            for (BasicBlock &BB : F)
+            {
+                Instruction *T = BB.getTerminator();
+                BranchKind Kind;
+                if (!T || !classify(T, Kind))
+                {
+                    continue;
+                }
+                uint32_t Line = 0;
+                if (const DebugLoc &DL = T->getDebugLoc())
+                {
+                    Line = DL.getLine();
+                }
+                Sites.push_back({T, Kind, FuncIdx, Line});
+                ++Static[Kind];
+            }
 
-      if (StaticReport)
-        errs() << "[GotoCounter static] " << FuncNames.back()
-               << ": goto=" << Static[KindGoto]
-               << " cond_br=" << Static[KindCondBr]
-               << " switch=" << Static[KindSwitch]
-               << " indirectbr=" << Static[KindIndirectBr] << "\n";
+            if (StaticReport)
+            {
+                errs() << "[GotoCounter static] " << FuncNames.back()
+                       << ": goto=" << Static[KindGoto]
+                       << " cond_br=" << Static[KindCondBr]
+                       << " switch=" << Static[KindSwitch]
+                       << " indirectbr=" << Static[KindIndirectBr] << "\n";
+            }
+        }
+
+        if (Sites.empty())
+        {
+            return PreservedAnalyses::all();
+        }
+
+        LLVMContext &Ctx = M.getContext();
+        Type *I32 = Type::getInt32Ty(Ctx);
+        Type *I64 = Type::getInt64Ty(Ctx);
+        PointerType *Ptr = PointerType::getUnqual(Ctx);
+        const uint64_t N = Sites.size();
+
+        // ---- Step 2: per-site counters and description tables. ----
+        ArrayType *CounterTy = ArrayType::get(I64, N);
+        GlobalVariable *Counters = new GlobalVariable(
+            M,
+            CounterTy,
+            /*isConstant=*/false,
+            GlobalValue::PrivateLinkage,
+            Constant::getNullValue(CounterTy),
+            "__gc_counters");
+
+        std::vector<Constant *> Kinds, FuncIdxs, Lines;
+        for (const BranchSite &S : Sites)
+        {
+            Kinds.push_back(ConstantInt::get(I32, S.Kind));
+            FuncIdxs.push_back(ConstantInt::get(I32, S.FuncIdx));
+            Lines.push_back(ConstantInt::get(I32, S.Line));
+        }
+        std::vector<Constant *> Names;
+        for (const std::string &Name : FuncNames)
+        {
+            Names.push_back(makeString(M, Name, "__gc_fname"));
+        }
+
+        GlobalVariable *KindsGV = makeConstArray(M, I32, Kinds, "__gc_kinds");
+        GlobalVariable *FuncIdxGV = makeConstArray(M, I32, FuncIdxs, "__gc_func_idx");
+        GlobalVariable *LinesGV = makeConstArray(M, I32, Lines, "__gc_lines");
+        GlobalVariable *NamesGV = makeConstArray(M, Ptr, Names, "__gc_fnames");
+        GlobalVariable *ModNameGV = makeString(M, M.getSourceFileName(), "__gc_module_name");
+
+        // ---- Step 3: insert `counter[i] += 1` before each branch. ----
+        for (uint64_t I = 0; I < N; ++I)
+        {
+            IRBuilder<> B(Sites[I].Term);
+            Value *Slot = B.CreateConstInBoundsGEP2_64(CounterTy, Counters, 0, I);
+            B.CreateAtomicRMW(
+                AtomicRMWInst::Add,
+                Slot,
+                ConstantInt::get(I64, 1),
+                MaybeAlign(8),
+                AtomicOrdering::Monotonic);
+        }
+
+        // ---- Step 4: module constructor that registers with the runtime. ----
+        // void __gc_register(uint64_t *counters, const uint32_t *kinds,
+        //                    const uint32_t *func_idx, const uint32_t *lines,
+        //                    uint32_t n_sites, const char *const *func_names,
+        //                    uint32_t n_funcs, const char *module_name);
+        FunctionCallee Register = M.getOrInsertFunction(
+            "__gc_register",
+            Type::getVoidTy(Ctx), // return type
+            Ptr,                  // counters
+            Ptr,                  // kinds
+            Ptr,                  // func_idx
+            Ptr,                  // lines
+            I32,                  // n_sites
+            Ptr,                  // func_names
+            I32,                  // n_funcs
+            Ptr);                 // module_name
+
+        Function *Ctor = Function::Create(
+            FunctionType::get(Type::getVoidTy(Ctx), false),
+            GlobalValue::InternalLinkage,
+            "__gc_module_ctor",
+            M);
+        IRBuilder<> B(BasicBlock::Create(Ctx, "entry", Ctor));
+        B.CreateCall(
+            Register,
+            {
+                Counters,
+                KindsGV,
+                FuncIdxGV,
+                LinesGV,
+                ConstantInt::get(I32, N),
+                NamesGV,
+                ConstantInt::get(I32, FuncNames.size()),
+                ModNameGV,
+            });
+        B.CreateRetVoid();
+        appendToGlobalCtors(M, Ctor, /*Priority=*/0);
+
+        return PreservedAnalyses::none();
     }
 
-    if (Sites.empty())
-      return PreservedAnalyses::all();
-
-    LLVMContext &Ctx = M.getContext();
-    Type *I32 = Type::getInt32Ty(Ctx);
-    Type *I64 = Type::getInt64Ty(Ctx);
-    PointerType *Ptr = PointerType::getUnqual(Ctx);
-    const uint64_t N = Sites.size();
-
-    // ---- Step 2: per-site counters and description tables. ----
-    ArrayType *CounterTy = ArrayType::get(I64, N);
-    GlobalVariable *Counters = new GlobalVariable(
-        M, CounterTy, /*isConstant=*/false, GlobalValue::PrivateLinkage,
-        Constant::getNullValue(CounterTy), "__gc_counters");
-
-    std::vector<Constant *> Kinds, FuncIdxs, Lines;
-    for (const BranchSite &S : Sites) {
-      Kinds.push_back(ConstantInt::get(I32, S.Kind));
-      FuncIdxs.push_back(ConstantInt::get(I32, S.FuncIdx));
-      Lines.push_back(ConstantInt::get(I32, S.Line));
+    // Run even on functions marked `optnone` (clang -O0 adds that attribute).
+    static bool isRequired()
+    {
+        return true;
     }
-    std::vector<Constant *> Names;
-    for (const std::string &Name : FuncNames)
-      Names.push_back(makeString(M, Name, "__gc_fname"));
-
-    GlobalVariable *KindsGV = makeConstArray(M, I32, Kinds, "__gc_kinds");
-    GlobalVariable *FuncIdxGV =
-        makeConstArray(M, I32, FuncIdxs, "__gc_func_idx");
-    GlobalVariable *LinesGV = makeConstArray(M, I32, Lines, "__gc_lines");
-    GlobalVariable *NamesGV = makeConstArray(M, Ptr, Names, "__gc_fnames");
-    GlobalVariable *ModNameGV =
-        makeString(M, M.getSourceFileName(), "__gc_module_name");
-
-    // ---- Step 3: insert `counter[i] += 1` before each branch. ----
-    for (uint64_t I = 0; I < N; ++I) {
-      IRBuilder<> B(Sites[I].Term);
-      Value *Slot = B.CreateConstInBoundsGEP2_64(CounterTy, Counters, 0, I);
-      B.CreateAtomicRMW(AtomicRMWInst::Add, Slot, ConstantInt::get(I64, 1),
-                        MaybeAlign(8), AtomicOrdering::Monotonic);
-    }
-
-    // ---- Step 4: module constructor that registers with the runtime. ----
-    // void __gc_register(uint64_t *counters, const uint32_t *kinds,
-    //                    const uint32_t *func_idx, const uint32_t *lines,
-    //                    uint32_t n_sites, const char *const *func_names,
-    //                    uint32_t n_funcs, const char *module_name);
-    FunctionCallee Register = M.getOrInsertFunction(
-        "__gc_register", Type::getVoidTy(Ctx), Ptr, Ptr, Ptr, Ptr, I32, Ptr,
-        I32, Ptr);
-
-    Function *Ctor = Function::Create(
-        FunctionType::get(Type::getVoidTy(Ctx), false),
-        GlobalValue::InternalLinkage, "__gc_module_ctor", M);
-    IRBuilder<> B(BasicBlock::Create(Ctx, "entry", Ctor));
-    B.CreateCall(Register,
-                 {Counters, KindsGV, FuncIdxGV, LinesGV,
-                  ConstantInt::get(I32, N), NamesGV,
-                  ConstantInt::get(I32, FuncNames.size()), ModNameGV});
-    B.CreateRetVoid();
-    appendToGlobalCtors(M, Ctor, /*Priority=*/0);
-
-    return PreservedAnalyses::none();
-  }
-
-  // Run even on functions marked `optnone` (clang -O0 adds that attribute).
-  static bool isRequired() { return true; }
 };
+
+// Called by opt for each name in `-passes=...`; we handle "goto-counter".
+bool parsePipelineName(StringRef Name, ModulePassManager &MPM,
+                       ArrayRef<PassBuilder::PipelineElement>)
+{
+    if (Name != "goto-counter")
+    {
+        return false;
+    }
+    MPM.addPass(GotoCounterPass());
+    return true;
+}
+
+// Called by clang (-fpass-plugin): run at the end of the optimization pipeline.
+void addAtOptimizerEnd(ModulePassManager &MPM, OptimizationLevel)
+{
+    MPM.addPass(GotoCounterPass());
+}
+
+void registerCallbacks(PassBuilder &PB)
+{
+    PB.registerPipelineParsingCallback(parsePipelineName);
+    PB.registerOptimizerLastEPCallback(addAtOptimizerEnd);
+}
 
 } // namespace
 
@@ -210,19 +306,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass> {
 //   opt   -load-pass-plugin=libGotoCounter.so -passes=goto-counter in.bc
 //   clang -fpass-plugin=libGotoCounter.so ...   (runs at the end of the
 //                                                 optimization pipeline)
-extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "GotoCounter", "1.0", [](PassBuilder &PB) {
-            PB.registerPipelineParsingCallback(
-                [](StringRef Name, ModulePassManager &MPM,
-                   ArrayRef<PassBuilder::PipelineElement>) {
-                  if (Name != "goto-counter")
-                    return false;
-                  MPM.addPass(GotoCounterPass());
-                  return true;
-                });
-            PB.registerOptimizerLastEPCallback(
-                [](ModulePassManager &MPM, OptimizationLevel) {
-                  MPM.addPass(GotoCounterPass());
-                });
-          }};
+extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo()
+{
+    return {LLVM_PLUGIN_API_VERSION, "GotoCounter", "1.0", registerCallbacks};
 }
