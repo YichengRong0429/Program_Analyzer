@@ -220,12 +220,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         {
             IRBuilder<> B(Sites[I].Term);
             Value *Slot = B.CreateConstInBoundsGEP2_64(CounterTy, Counters, 0, I);
-            B.CreateAtomicRMW(
-                AtomicRMWInst::Add,
-                Slot,
-                ConstantInt::get(I64, 1),
-                MaybeAlign(8),
-                AtomicOrdering::Monotonic);
+            B.CreateAtomicRMW( AtomicRMWInst::Add, Slot, ConstantInt::get(I64, 1), MaybeAlign(8), AtomicOrdering::Monotonic);
         }
 
         // ---- Step 4: module constructor that registers with the runtime. ----
@@ -233,9 +228,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         //                    const uint32_t *func_idx, const uint32_t *lines,
         //                    uint32_t n_sites, const char *const *func_names,
         //                    uint32_t n_funcs, const char *module_name);
-        FunctionCallee Register = M.getOrInsertFunction(
-            "__gc_register",
-            Type::getVoidTy(Ctx), // return type
+        FunctionCallee Register = M.getOrInsertFunction( "__gc_register", Type::getVoidTy(Ctx), // return type
             Ptr,                  // counters
             Ptr,                  // kinds
             Ptr,                  // func_idx
@@ -244,12 +237,8 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
             Ptr,                  // func_names
             I32,                  // n_funcs
             Ptr);                 // module_name
-
-        Function *Ctor = Function::Create(
-            FunctionType::get(Type::getVoidTy(Ctx), false),
-            GlobalValue::InternalLinkage,
-            "__gc_module_ctor",
-            M);
+        
+        Function *Ctor = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), false), GlobalValue::InternalLinkage, "__gc_module_ctor", M);
         IRBuilder<> B(BasicBlock::Create(Ctx, "entry", Ctor));
         B.CreateCall(
             Register,
@@ -277,8 +266,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
 };
 
 // Called by opt for each name in `-passes=...`; we handle "goto-counter".
-bool parsePipelineName(StringRef Name, ModulePassManager &MPM,
-                       ArrayRef<PassBuilder::PipelineElement>)
+bool parsePipelineName(StringRef Name, ModulePassManager &MPM, ArrayRef<PassBuilder::PipelineElement>)
 {
     if (Name != "goto-counter")
     {
