@@ -194,8 +194,11 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
             }
         }
 
-        // Nothing changed, so all() = old analysis results are still fine.
-        if (Sites.empty())
+        // No function bodies here, so nothing to count. Nothing changed, so
+        // all() = old analysis results are still fine.
+        // A module with functions but no branch sites still registers (with
+        // N = 0), so a branch-free program prints a report of zeros.
+        if (FuncNames.empty())
         {
             return PreservedAnalyses::all();
         }

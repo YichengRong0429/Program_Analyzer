@@ -51,13 +51,16 @@ fi
 
 linker=clang
 instrumented=()
+idx=0
 for src in "${srcs[@]}"; do
   case "$src" in
     *.c) cc=clang ;;
     *.cc | *.cpp | *.cxx | *.C) cc=clang++; linker=clang++ ;;
     *) echo "[run.sh] unsupported source file: $src" >&2; exit 1 ;;
   esac
-  name="$(basename "${src%.*}")"
+  # Index prefix keeps a/x.c and b/x.c from overwriting each other's files.
+  idx=$((idx + 1))
+  name="$idx-$(basename "${src%.*}")"
   # 1. C/C++ -> LLVM IR (with debug info so sites map back to source lines).
   "$cc" "-$OPT_LEVEL" -g -emit-llvm -c "$src" -o "$WORK/$name.bc"
   # 2. Run the GotoCounter pass: find every branch and insert a counter.
