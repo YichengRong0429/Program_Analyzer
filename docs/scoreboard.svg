@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="620" viewBox="0 0 800 620" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a8a8a"/>
+    </marker>
+    <style>
+      .title { fill: #f0f0f0; font-size: 15px; font-weight: 600; }
+      .sub   { fill: #9a9a9a; font-size: 11px; }
+      .idx   { fill: #9a9a9a; font-size: 12px; text-anchor: middle; }
+      .idxb  { fill: #f0f0f0; font-size: 12px; font-weight: 700; text-anchor: middle; }
+      .name  { fill: #f0f0f0; font-size: 13px; font-weight: 700; font-family: 'JetBrains Mono', Consolas, Menlo, monospace; }
+      .type  { fill: #9a9a9a; font-size: 11px; }
+      .cell  { fill: none; stroke: #5a5a5a; stroke-width: 1.2; }
+      .hcell { fill: #303030; stroke: #6a6a6a; stroke-width: 1.2; }
+      .ctr   { fill: #1f2a3d; stroke: #5b8def; stroke-width: 1.8; }
+      .val   { fill: #e0e0e0; font-size: 13px; text-anchor: middle; font-family: 'JetBrains Mono', Consolas, Menlo, monospace; }
+      .lbl   { fill: #e0e0e0; font-size: 13px; text-anchor: middle; }
+      .mono  { fill: #9a9a9a; font-size: 11px; font-family: 'JetBrains Mono', Consolas, Menlo, monospace; }
+      .cap   { fill: #9a9a9a; font-size: 13px; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect width="800" height="620" fill="#1a1a1a"/>
+
+  <text class="title" x="24" y="32">One index i links each branch site to its counter and its description</text>
+  <text class="sub" x="24" y="50">Only the counters are written at run time; the other tables are constant and read by report()</text>
+
+  <!-- highlighted column i (site tables) and column f (function names) -->
+  <rect x="452" y="76" width="96" height="270" rx="6" fill="#262626"/>
+  <rect x="452" y="392" width="96" height="98" rx="6" fill="#262626"/>
+
+  <!-- site index header -->
+  <text class="type" x="24" y="96">branch site</text>
+  <text class="idx" x="270" y="96">0</text>
+  <text class="idx" x="362" y="96">1</text>
+  <text class="idx" x="431" y="96">…</text>
+  <text class="idxb" x="500" y="96">i</text>
+  <text class="idx" x="570" y="96">…</text>
+  <text class="idx" x="640" y="96">N−1</text>
+
+  <!-- __gc_counters -->
+  <text class="name" x="24" y="128">__gc_counters</text>
+  <text class="type" x="24" y="144">i64[N], starts at 0</text>
+  <rect class="ctr" x="228" y="110" width="84" height="50" rx="7"/>
+  <rect class="ctr" x="320" y="110" width="84" height="50" rx="7"/>
+  <rect class="ctr" x="458" y="110" width="84" height="50" rx="7"/>
+  <rect class="ctr" x="598" y="110" width="84" height="50" rx="7"/>
+  <text class="val" x="270" y="140">0</text>
+  <text class="val" x="362" y="140">0</text>
+  <text class="val" x="500" y="140">0</text>
+  <text class="val" x="640" y="140">0</text>
+
+  <!-- __gc_kinds -->
+  <text class="name" x="24" y="186">__gc_kinds</text>
+  <text class="type" x="24" y="202">i32[N], constant</text>
+  <rect class="cell" x="228" y="168" width="84" height="50" rx="7"/>
+  <rect class="cell" x="320" y="168" width="84" height="50" rx="7"/>
+  <rect class="hcell" x="458" y="168" width="84" height="50" rx="7"/>
+  <rect class="cell" x="598" y="168" width="84" height="50" rx="7"/>
+  <text class="lbl" x="500" y="198">kind</text>
+
+  <!-- __gc_lines -->
+  <text class="name" x="24" y="244">__gc_lines</text>
+  <text class="type" x="24" y="260">i32[N], constant</text>
+  <rect class="cell" x="228" y="226" width="84" height="50" rx="7"/>
+  <rect class="cell" x="320" y="226" width="84" height="50" rx="7"/>
+  <rect class="hcell" x="458" y="226" width="84" height="50" rx="7"/>
+  <rect class="cell" x="598" y="226" width="84" height="50" rx="7"/>
+  <text class="lbl" x="500" y="256">line</text>
+
+  <!-- __gc_func_idx -->
+  <text class="name" x="24" y="302">__gc_func_idx</text>
+  <text class="type" x="24" y="318">i32[N], constant</text>
+  <rect class="cell" x="228" y="284" width="84" height="50" rx="7"/>
+  <rect class="cell" x="320" y="284" width="84" height="50" rx="7"/>
+  <rect class="hcell" x="458" y="284" width="84" height="50" rx="7"/>
+  <rect class="cell" x="598" y="284" width="84" height="50" rx="7"/>
+  <text class="lbl" x="500" y="314">f</text>
+
+  <!-- func_idx[i] -> fnames[f] -->
+  <line x1="500" y1="334" x2="500" y2="400" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <text class="mono" x="514" y="374">__gc_func_idx[i] = f</text>
+
+  <!-- __gc_fnames -->
+  <text class="name" x="24" y="420">__gc_fnames</text>
+  <text class="type" x="24" y="436">ptr[F], one per function</text>
+  <rect class="cell" x="228" y="402" width="84" height="50" rx="7"/>
+  <rect class="cell" x="320" y="402" width="84" height="50" rx="7"/>
+  <rect class="hcell" x="458" y="402" width="84" height="50" rx="7"/>
+  <rect class="cell" x="598" y="402" width="84" height="50" rx="7"/>
+  <text class="lbl" x="500" y="432">name</text>
+
+  <!-- function index footer -->
+  <text class="idx" x="270" y="478">0</text>
+  <text class="idx" x="362" y="478">1</text>
+  <text class="idx" x="431" y="478">…</text>
+  <text class="idxb" x="500" y="478">f</text>
+  <text class="idx" x="570" y="478">…</text>
+  <text class="idx" x="640" y="478">F−1</text>
+
+  <!-- __gc_module_name -->
+  <text class="name" x="24" y="518">__gc_module_name</text>
+  <text class="type" x="24" y="534">string</text>
+  <rect class="cell" x="228" y="500" width="454" height="50" rx="7"/>
+  <text class="val" x="455" y="530">M.getSourceFileName(), e.g. sum.c</text>
+
+  <text class="cap" x="400" y="596">the scoreboard · one slot per branch site</text>
+</svg>
