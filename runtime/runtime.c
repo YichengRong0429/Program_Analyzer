@@ -47,10 +47,12 @@ struct gc_module
     struct gc_module *next;        /* linked list of all modules */
 };
 
+/* One node per instrumented source file. */
 static struct gc_module *modules;
 
 static void report(void);
 
+/* Called once per source file, before main(). */
 void __gc_register(uint64_t *counters,
                    const uint32_t *kinds,
                    const uint32_t *func_idx,
@@ -134,6 +136,7 @@ static void report_module(FILE *out, const struct gc_module *m)
     }
 }
 
+/* Runs at exit (see atexit above). */
 static void report(void)
 {
     /* Let the program's own buffered output appear before the report. */

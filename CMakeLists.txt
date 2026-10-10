@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(GotoCounter LANGUAGES C CXX)
 
+# If not found: -DLLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 

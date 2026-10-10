@@ -26,6 +26,11 @@
 // The dynamic part happens when the instrumented program runs: each executed
 // branch bumps its counter.
 //
+// Quick notes:
+//   Module     = one source file in IR form
+//   BasicBlock = a chunk of code with no jumps inside, ends with a terminator
+//   Terminator = last instruction of a block (br, switch, ret, ...)
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Demangle/Demangle.h"
@@ -50,6 +55,7 @@
 
 using namespace llvm;
 
+// Adds the flag -goto-counter-static to opt (with clang: -mllvm -goto-counter-static).
 static cl::opt<bool> StaticReport(
     "goto-counter-static",
     cl::desc("Print static (compile-time) branch counts per function to stderr"),
@@ -58,6 +64,7 @@ static cl::opt<bool> StaticReport(
 namespace
 {
 
+// Must match the enum in runtime/runtime.c.
 enum BranchKind : uint32_t
 {
     KindGoto = 0,
@@ -71,11 +78,12 @@ struct BranchSite
 {
     Instruction *Term;
     BranchKind Kind;
-    uint32_t FuncIdx;
-    uint32_t Line;
+    uint32_t FuncIdx;   // index into FuncNames
+    uint32_t Line;      // 0 if no debug info
 };
 
 // Returns true and sets Kind if T is a branch we count.
+// dyn_cast / isa are LLVM's version of dynamic_cast (LLVM doesn't use RTTI).
 bool classify(const Instruction *T, BranchKind &Kind)
 {
     if (const BranchInst *Br = dyn_cast<BranchInst>(T))
@@ -106,7 +114,10 @@ bool classify(const Instruction *T, BranchKind &Kind)
 // Creates a private constant C string and returns it as a global.
 GlobalVariable *makeString(Module &M, StringRef Str, const Twine &Name)
 {
+    // getString adds the '\0' at the end for us.
     Constant *Init = ConstantDataArray::getString(M.getContext(), Str);
+    // new GlobalVariable(M, ...) adds it to the module, M owns it.
+    // PrivateLinkage = only this file sees it, so no name clash when linking.
     GlobalVariable *GV = new GlobalVariable(
         M,
         Init->getType(),
@@ -114,10 +125,12 @@ GlobalVariable *makeString(Module &M, StringRef Str, const Twine &Name)
         GlobalValue::PrivateLinkage,
         Init,
         Name);
+    // Address doesn't matter, so the linker can merge same strings.
     GV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
     return GV;
 }
 
+// Same idea, but a constant array: static const T Name[] = {...};
 GlobalVariable *makeConstArray(Module &M, Type *ElemTy, ArrayRef<Constant *> Elems, const Twine &Name)
 {
     ArrayType *Ty = ArrayType::get(ElemTy, Elems.size());
@@ -130,6 +143,7 @@ GlobalVariable *makeConstArray(Module &M, Type *ElemTy, ArrayRef<Constant *> Ele
         Name);
 }
 
+// PassInfoMixin fills in the boilerplate for the new pass manager, we just write run().
 struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
 {
     PreservedAnalyses run(Module &M, ModuleAnalysisManager &)
@@ -138,13 +152,16 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         std::vector<std::string> FuncNames;
 
         // ---- Step 1: find every branch site (pure static analysis). ----
+        // Only collect here. We need N before making the counter array.
         for (Function &F : M)
         {
+            // No body here (like printf), skip.
             if (F.isDeclaration())
             {
                 continue;
             }
             uint32_t FuncIdx = FuncNames.size();
+            // demangle: _Z3fooi -> foo(int). C names stay the same.
             FuncNames.push_back(demangle(F.getName().str()));
 
             std::array<unsigned, NumKinds> Static{};
@@ -156,6 +173,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
                 {
                     continue;
                 }
+                // Only has a line if compiled with -g.
                 uint32_t Line = 0;
                 if (const DebugLoc &DL = T->getDebugLoc())
                 {
@@ -167,6 +185,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
 
             if (StaticReport)
             {
+                // errs() = LLVM's stderr
                 errs() << "[GotoCounter static] " << FuncNames.back()
                        << ": goto=" << Static[KindGoto]
                        << " cond_br=" << Static[KindCondBr]
@@ -175,6 +194,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
             }
         }
 
+        // Nothing changed, so all() = old analysis results are still fine.
         if (Sites.empty())
         {
             return PreservedAnalyses::all();
@@ -183,10 +203,12 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         LLVMContext &Ctx = M.getContext();
         Type *I32 = Type::getInt32Ty(Ctx);
         Type *I64 = Type::getInt64Ty(Ctx);
+        // Just `ptr`. Since LLVM 15 all pointers are the same type.
         PointerType *Ptr = PointerType::getUnqual(Ctx);
         const uint64_t N = Sites.size();
 
         // ---- Step 2: per-site counters and description tables. ----
+        // uint64_t __gc_counters[N] = {0};
         ArrayType *CounterTy = ArrayType::get(I64, N);
         GlobalVariable *Counters = new GlobalVariable(
             M,
@@ -218,8 +240,12 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         // ---- Step 3: insert `counter[i] += 1` before each branch. ----
         for (uint64_t I = 0; I < N; ++I)
         {
+            // Builder puts new instructions right before the branch.
             IRBuilder<> B(Sites[I].Term);
+            // GEP = &__gc_counters[I], it only computes the address.
             Value *Slot = B.CreateConstInBoundsGEP2_64(CounterTy, Counters, 0, I);
+            // Atomic +1 so threads don't mess up the count.
+            // Monotonic = relaxed, the cheapest one.
             B.CreateAtomicRMW( AtomicRMWInst::Add, Slot, ConstantInt::get(I64, 1), MaybeAlign(8), AtomicOrdering::Monotonic);
         }
 
@@ -228,6 +254,7 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
         //                    const uint32_t *func_idx, const uint32_t *lines,
         //                    uint32_t n_sites, const char *const *func_names,
         //                    uint32_t n_funcs, const char *module_name);
+        // Only declares it here. The body is in runtime.c and gets linked later.
         FunctionCallee Register = M.getOrInsertFunction( "__gc_register", Type::getVoidTy(Ctx), // return type
             Ptr,                  // counters
             Ptr,                  // kinds
@@ -237,7 +264,8 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
             Ptr,                  // func_names
             I32,                  // n_funcs
             Ptr);                 // module_name
-        
+
+        // static void __gc_module_ctor(void) { __gc_register(...); }
         Function *Ctor = Function::Create(FunctionType::get(Type::getVoidTy(Ctx), false), GlobalValue::InternalLinkage, "__gc_module_ctor", M);
         IRBuilder<> B(BasicBlock::Create(Ctx, "entry", Ctor));
         B.CreateCall(
@@ -253,8 +281,10 @@ struct GotoCounterPass : PassInfoMixin<GotoCounterPass>
                 ModNameGV,
             });
         B.CreateRetVoid();
+        // Runs Ctor before main(), like __attribute__((constructor)).
         appendToGlobalCtors(M, Ctor, /*Priority=*/0);
 
+        // We changed the IR, so old analysis results are no good now.
         return PreservedAnalyses::none();
     }
 
@@ -282,6 +312,7 @@ void addAtOptimizerEnd(ModulePassManager &MPM, OptimizationLevel)
     MPM.addPass(GotoCounterPass());
 }
 
+// Hook the two functions above into LLVM.
 void registerCallbacks(PassBuilder &PB)
 {
     PB.registerPipelineParsingCallback(parsePipelineName);
@@ -294,6 +325,7 @@ void registerCallbacks(PassBuilder &PB)
 //   opt   -load-pass-plugin=libGotoCounter.so -passes=goto-counter in.bc
 //   clang -fpass-plugin=libGotoCounter.so ...   (runs at the end of the
 //                                                 optimization pipeline)
+// opt/clang look for this exact name, so extern "C" (no name mangling).
 extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo()
 {
     return {LLVM_PLUGIN_API_VERSION, "GotoCounter", "1.0", registerCallbacks};

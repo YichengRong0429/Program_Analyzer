@@ -64,6 +64,7 @@ for src in "${srcs[@]}"; do
   "$OPT" -load-pass-plugin="$PLUGIN" -passes=goto-counter \
     ${SHOW_STATIC:+-goto-counter-static} "$WORK/$name.bc" -o "$WORK/$name.inst.bc"
   if [[ -n "${KEEP:-}" ]]; then
+    # .bc -> readable .ll
     llvm-dis "$WORK/$name.bc" -o "$WORK/$name.ll"
     llvm-dis "$WORK/$name.inst.bc" -o "$WORK/$name.inst.ll"
   fi
