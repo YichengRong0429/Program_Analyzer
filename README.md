@@ -5,6 +5,8 @@ LLVM IR) a C/C++ program executes in one run.
 
 ## 1. Build and run
 
+![GotoCounter build and run pipeline](docs/pipeline.png)
+
 Requirements: LLVM/Clang 18, CMake ≥ 3.20. On Ubuntu 24.04:
 
 ```bash
