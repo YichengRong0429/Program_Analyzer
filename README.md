@@ -81,10 +81,50 @@ the pass counts four kinds:
 | switch | `switch` | `switch` |
 | indirectbr | `indirectbr` | GNU computed goto `goto *p` |
 
-The pass (`pass/GotoCounterPass.cpp`) inserts an atomic counter increment
-before every branch. The runtime (`runtime/runtime.c`) prints the totals
-when the program exits. The analysis has to be dynamic, because the
-executed count depends on the input.
+The analysis has to be dynamic, because the executed count depends on the
+input. The work is split between a compile-time pass and a small runtime
+library:
+
+![GotoCounter internals](docs/internals.png)
+
+### Compile time: `GotoCounterPass::run()` (`pass/GotoCounterPass.cpp`)
+
+The pass runs once per module (`sum.bc`). `run.sh` runs it inside `opt`;
+with `clang -fpass-plugin` it runs at the end of clang's optimization
+pipeline.
+
+1. **Find branch sites.** For every defined function, `classify()` looks at
+   the terminator of each basic block and records it in `Sites[]` with its
+   kind, function index and source line (from debug info, 0 if missing).
+   With `-goto-counter-static` (`SHOW_STATIC=1`) the per-function static
+   counts are printed here.
+2. **Build tables.** Adds global arrays to the module: `__gc_counters[N]`
+   (one zero-initialized 64-bit counter per site), and constant tables
+   `__gc_kinds`, `__gc_func_idx`, `__gc_lines` and `__gc_fnames` that
+   describe each site.
+3. **Instrument.** Inserts `atomicrmw add __gc_counters[i], 1` right before
+   site `i`. The increment is atomic, so multithreaded programs are counted
+   correctly.
+4. **Add constructor.** Creates `__gc_module_ctor`, which passes the
+   pointers to these tables to `__gc_register()`, and adds it to
+   `llvm.global_ctors`.
+
+The output `sum.inst.bc` is linked with `libgoto_runtime.a` into the final
+program.
+
+### Run time: `./program` (`runtime/runtime.c`)
+
+1. **`__gc_module_ctor()`** runs automatically before `main`, once per
+   instrumented source file.
+2. **`__gc_register()`** stores the module's table pointers in a linked
+   list. The first call also registers `report()` with `atexit`. Because it
+   is registered this early, it runs after any `atexit` handlers the program
+   itself installs.
+3. **`main()`** runs as usual. Every executed branch increments its counter.
+4. **`report()`** runs at exit. It sums the counters by kind (overall and per
+   function) and prints the report. `GOTO_COUNTER_SITES=1` also lists every
+   executed site, and `GOTO_COUNTER_OUTPUT=<file>` writes the report to a
+   file instead of stderr.
 
 ## 4. Notes
 
