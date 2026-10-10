@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks GotoCounter against counts derived by hand (see README, "Validation").
+# Checks GotoCounter against counts derived by hand.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

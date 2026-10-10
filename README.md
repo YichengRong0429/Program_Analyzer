@@ -56,18 +56,8 @@ clang -O0 -g -fpass-plugin=build/pass/libGotoCounter.so prog.c build/runtime/lib
 ## 2. Tests
 
 ```bash
-tests/run_tests.sh       # checks counts against hand-derived values
+tests/run_tests.sh   # checks counts against hand-derived values
 ```
-
-Large-scale check on [Project CodeNet](https://github.com/IBM/Project_CodeNet).
-This compiles each Accepted C/C++ submission with and without the pass, runs
-both on the sample input, and checks that the output is unchanged:
-
-```bash
-bench/codenet.py --codenet ~/Project_CodeNet --per-problem 5 --limit 2000 --jobs 8 --out results.csv
-```
-
-The submissions are untrusted code, so run it in a VM or container.
 
 ## 3. How it works
 
